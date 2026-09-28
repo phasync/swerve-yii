@@ -47,11 +47,13 @@ function app_stop($proc, bool $signal = true): int
         \proc_terminate($proc, \SIGTERM);
     }
     $deadline = \microtime(true) + 10;
-    while (\proc_get_status($proc)['running'] && \microtime(true) < $deadline) {
+    while (($status = \proc_get_status($proc))['running'] && \microtime(true) < $deadline) {
         \usleep(50_000);
     }
+    // Before PHP 8.3 only the proc_get_status() that saw the exit has the exit code
+    $code = \proc_close($proc);
 
-    return \proc_close($proc);
+    return $status['running'] ? $code : $status['exitcode'];
 }
 
 /**
