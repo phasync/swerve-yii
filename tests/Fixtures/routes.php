@@ -134,6 +134,14 @@ return [
             }
         });
     }),
+    // A wait of ?ms= (default 10) in usleep(), as a database query waits: it blocks the worker
+    // without phasync-ext
+    Route::get('/usleep')->action(function (ResponseFactoryInterface $f, ServerRequestInterface $r) use ($json) {
+        $ms = (int) ($r->getQueryParams()['ms'] ?? 10);
+        \usleep(1000 * $ms);
+
+        return $json($f, ['waited' => $ms]);
+    }),
     Route::get('/slow')->action(function (ResponseFactoryInterface $f) use ($text, $nap) {
         $nap(1);
 
