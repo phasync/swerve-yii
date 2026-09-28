@@ -13,6 +13,8 @@ covered.
 
 ```bash
 composer config minimum-stability alpha && composer config prefer-stable true
+composer config minimum-stability alpha   # while swerve is in alpha
+composer config prefer-stable true         # everything else stays stable
 composer require phasync/swerve-yii
 ```
 
