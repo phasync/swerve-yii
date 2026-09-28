@@ -119,15 +119,6 @@ it('streams a response as it is produced', function () {
         ->and(\end($chunks)[1])->toBeGreaterThan(0.9);
 });
 
-it('holds a WebSocket from a route', function () {
-    $conn = ws_connect($this->addr, '/ws');
-    ws_send($conn, 'hello');
-    expect(ws_read($conn))->toBe('echo: hello');
-    ws_send($conn, 'again');
-    expect(ws_read($conn))->toBe('echo: again');
-    \fclose($conn);
-});
-
 it('logged no errors', function () {
     expect(\file_get_contents($this->log))->not->toMatch('/error|exception|warning/i');
 });

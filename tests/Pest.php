@@ -125,17 +125,32 @@ function csrf_token(string $addr, string $jar): string
     return http("http://$addr/csrf", $jar)[1];
 }
 
+/** The cookies of a jar, as a Cookie header's value. */
+function jar_cookies(string $jar): string
+{
+    $cookies = [];
+    foreach (\file($jar, \FILE_IGNORE_NEW_LINES) as $line) {
+        $fields = \explode("\t", $line);
+        if (7 === \count($fields) && !\str_starts_with($line, '# ')) {
+            $cookies[] = "$fields[5]=$fields[6]";
+        }
+    }
+
+    return \implode('; ', $cookies);
+}
+
 /**
  * A WebSocket client (RFC 6455), minimal: the handshake, checking the 101.
  *
  * @return resource the blocking connection, with a 5 s timeout
  */
-function ws_connect(string $addr, string $path)
+function ws_connect(string $addr, string $path, ?string $jar = null)
 {
     $conn = \stream_socket_client("tcp://$addr", $errno, $error, 5);
     \stream_set_timeout($conn, 5);
-    $key = \base64_encode(\random_bytes(16));
-    \fwrite($conn, "GET $path HTTP/1.1\r\nHost: test\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $key\r\nSec-WebSocket-Version: 13\r\n\r\n");
+    $key    = \base64_encode(\random_bytes(16));
+    $cookie = null === $jar ? '' : 'Cookie: ' . jar_cookies($jar) . "\r\n";
+    \fwrite($conn, "GET $path HTTP/1.1\r\nHost: test\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $key\r\nSec-WebSocket-Version: 13\r\n$cookie\r\n");
     $head = '';
     while (!\str_ends_with($head, "\r\n\r\n") && false !== $line = \fgets($conn)) {
         $head .= $line;
@@ -146,19 +161,78 @@ function ws_connect(string $addr, string $path)
     return $conn;
 }
 
-/** Send a text frame, masked as a client must. */
-function ws_send($conn, string $payload): void
+/** Send a frame (text by default), masked as a client must. */
+function ws_send($conn, string $payload, int $opcode = 1): void
 {
     $n    = \strlen($payload);
     $mask = \random_bytes(4);
-    \fwrite($conn, "\x81" . ($n < 126 ? \chr(0x80 | $n) : \chr(0x80 | 126) . \pack('n', $n)) . $mask . ($payload ^ \substr(\str_repeat($mask, \intdiv($n, 4) + 1), 0, $n)));
+    \fwrite($conn, \chr(0x80 | $opcode) . ($n < 126 ? \chr(0x80 | $n) : \chr(0x80 | 126) . \pack('n', $n)) . $mask . ($payload ^ \substr(\str_repeat($mask, \intdiv($n, 4) + 1), 0, $n)));
 }
 
-/** The payload of the next frame from the server (unmasked, shorter than 126 bytes). */
-function ws_read($conn): string
+/**
+ * The next frame from the server (unmasked, shorter than 64 KiB), as [opcode, payload]; null
+ * when the connection ended or stayed quiet for its timeout.
+ *
+ * @return array{0: int, 1: string}|null
+ */
+function ws_frame($conn): ?array
 {
-    $head = \fread($conn, 2);
-    $n    = \ord($head[1]) & 0x7F;
+    $read = static function (int $n) use ($conn): ?string {
+        $bytes = '';
+        while (\strlen($bytes) < $n && false !== ($chunk = \fread($conn, $n - \strlen($bytes))) && '' !== $chunk) {
+            $bytes .= $chunk;
+        }
 
-    return $n > 0 ? \fread($conn, $n) : '';
+        return \strlen($bytes) === $n ? $bytes : null;
+    };
+    if (null === $head = $read(2)) {
+        return null;
+    }
+    $n = \ord($head[1]) & 0x7F;
+    if (126 === $n) {
+        $n = \unpack('n', $read(2))[1];
+    }
+
+    return [\ord($head[0]) & 0x0F, $n > 0 ? $read($n) : ''];
+}
+
+/** The payload of the next frame from the server. */
+function ws_read($conn): ?string
+{
+    return ws_frame($conn)[1] ?? null;
+}
+
+/**
+ * How many NewsSocket callbacks run in each worker, by pid: /news/live answers for the worker it
+ * reaches, so it asks on new connections until it heard from $workers of them.
+ *
+ * @return array<int, int>
+ */
+function news_live_by_worker(string $addr, int $workers): array
+{
+    $seen = [];
+    for ($i = 0; $i < 100 && \count($seen) < $workers; ++$i) {
+        [$pid, $n]  = \json_decode(http("http://$addr/news/live", null, [\CURLOPT_FORBID_REUSE => true, \CURLOPT_FRESH_CONNECT => true])[1], true);
+        $seen[$pid] = $n;
+    }
+    expect(\count($seen))->toBe($workers);
+
+    return $seen;
+}
+
+/** How many NewsSocket callbacks run, over all workers. */
+function news_live(string $addr, int $workers): int
+{
+    return \array_sum(news_live_by_worker($addr, $workers));
+}
+
+/** Wait until news_live() is $n, for up to $seconds: the count. */
+function news_live_wait(string $addr, int $workers, int $n, float $seconds = 3): int
+{
+    $deadline = \microtime(true) + $seconds;
+    while (($live = news_live($addr, $workers)) !== $n && \microtime(true) < $deadline) {
+        \usleep(50_000);
+    }
+
+    return $live;
 }

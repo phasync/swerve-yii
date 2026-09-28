@@ -32,6 +32,54 @@ That's the whole setup. `public/index.php` stays as it is, so the same applicati
 under PHP-FPM. `APP_ENV` and `APP_DEBUG` are read from the environment, as the skeleton reads
 them; `new Swerve\Yii\Handler(__DIR__, debug: false, environment: 'prod')` sets them instead.
 
+## WebSockets
+
+A Yii action returns `Swerve\Http\WebSocket::from()`'s response; the callback runs on the
+connection after the 101. An ordinary GET to the same route is answered 426.
+
+```php
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Swerve\Http\WebSocket;
+use Swerve\Swerve;
+use Yiisoft\User\CurrentUser;
+
+final readonly class NewsAction   // Route::get('/news')->action(NewsAction::class)
+{
+    public function __invoke(ServerRequestInterface $request, CurrentUser $user): ResponseInterface
+    {
+        $userId = $user->getId();   // now: the callback runs after the request's services are reset
+
+        return WebSocket::from($request, static function (WebSocket $ws) use ($userId) {
+            foreach (Swerve::subscribe("user:$userId") as $message) {
+                $ws->send($message);
+            }
+        });
+    }
+}
+```
+
+Any other action, on any worker, pushes to it:
+
+```php
+Swerve::publish("user:$userId", json_encode(['text' => 'Your report is ready']));
+```
+
+- **Both ways:** `foreach ($ws as $message)` receives until the client closes; `send()`,
+  `sendBinary()` and `isBinary()` do the rest. See swerve's
+  [realtime guide](https://github.com/phasync/swerve/blob/main/docs/realtime.md).
+- **The worker's turn:** the action returns the 101 and its turn ends; the callback runs
+  beside the requests that follow. The tests hold 250 WebSockets open on one worker and its
+  pages are still answered promptly.
+- **The user, the session, route arguments:** read them in the action, before
+  `WebSocket::from()`, and pass the values in. `CurrentUser`, `SessionInterface`,
+  `CurrentRoute` and the like belong to whichever request the worker serves at that moment:
+  read inside the callback, `CurrentUser` gives the guest, or the user of another visitor's
+  request in progress (a test shows it).
+- **Leaving and stopping:** when the client leaves, with or without a close frame, the callback
+  ends, also one that only forwards a subscription. On a shutdown or reload, open sockets are
+  closed with 1001 (going away) and the worker exits cleanly.
+
 ## What changes
 
 | Yii skeleton, 4 processes | PHP-FPM | swerve | swerve + phasync-ext |
@@ -69,7 +117,8 @@ worker. [Method and raw results](benchmarks/).
 - A service of your own that keeps request state needs a `reset` callback in its container
   definition, as Yii's own services have: without one, the next request sees that state.
 - A streamed body, an SSE producer or a WebSocket callback runs after the reset: take what it
-  needs (the user id, route arguments, session values) before returning the response.
+  needs (the user id, route arguments, session values) before returning the response. Read
+  inside it, those services show another request's state, another visitor's user included.
 - `AfterEmit` is dispatched when the application returns the response, before swerve sends
   it, not after as under PHP-FPM.
 - The application's `ErrorHandler` is registered for the whole worker: a PHP warning becomes an

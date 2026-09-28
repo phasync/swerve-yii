@@ -64,6 +64,85 @@ it('finishes a slow request when told to stop', function () {
         ->and(\file_get_contents($this->log))->not->toMatch('/error|exception|warning/i');
 });
 
+// The callback runs after the request's turn, when the services serve other requests
+it('shows another request\'s user to a WebSocket callback that reads CurrentUser itself', function () {
+    $jar = jar();
+    http("http://$this->addr/login/ada", $jar);
+    $conn = ws_connect($this->addr, '/ws/who', $jar);
+
+    // bob's request holds the worker's turn for 0.3 s, logged in, meanwhile ada's socket asks
+    $ch    = request("http://$this->addr/isolation/bob", jar());
+    $multi = \curl_multi_init();
+    \curl_multi_add_handle($multi, $ch);
+    $until = \microtime(true) + 0.1;
+    do {
+        \curl_multi_exec($multi, $running);
+        \curl_multi_select($multi, 0.02);
+    } while (\microtime(true) < $until);
+    ws_send($conn, 'inside');
+    ws_send($conn, 'taken');
+    expect(ws_read($conn))->toBe('inside: bob')
+        ->and(ws_read($conn))->toBe('taken: ada');
+    do {
+        \curl_multi_exec($multi, $running);
+        \curl_multi_select($multi, 0.05);
+    } while ($running > 0);
+    expect(\json_decode(\curl_multi_getcontent($ch), true)['user'])->toBe('bob');
+    \fclose($conn);
+});
+
+it('serves HTTP requests promptly with 250 WebSockets open', function () {
+    $echo = $news = [];
+    for ($i = 0; $i < 125; ++$i) {
+        $echo[] = ws_connect($this->addr, '/ws');
+        $news[] = ws_connect($this->addr, '/news');
+    }
+    expect(news_live_wait($this->addr, 1, 125))->toBe(125);
+
+    $jar = jar();
+    for ($i = 0; $i < 20; ++$i) {
+        $start           = \microtime(true);
+        [$status, $body] = http("http://$this->addr/", $jar);
+        expect($status)->toBe(200)->and($body)->toContain('Hello!')
+            ->and(\microtime(true) - $start)->toBeLessThan(0.25);
+    }
+
+    // And the sockets still work, both ways
+    http("http://$this->addr/news/publish/still-here");
+    foreach ($news as $conn) {
+        expect(ws_read($conn))->toBe('guest: still-here');
+    }
+    foreach ($echo as $i => $conn) {
+        ws_send($conn, "m$i");
+    }
+    foreach ($echo as $i => $conn) {
+        expect(ws_read($conn))->toBe("echo: m$i");
+    }
+    \array_map(fclose(...), [...$echo, ...$news]);
+    expect(news_live_wait($this->addr, 1, 0))->toBe(0)
+        ->and(\file_get_contents($this->log))->not->toMatch('/error|exception|warning/i');
+});
+
+it('closes open WebSockets with 1001 when told to stop, and exits cleanly', function () {
+    $clients = [];
+    for ($i = 0; $i < 5; ++$i) {
+        $clients[] = ws_connect($this->addr, '/ws');
+        $clients[] = ws_connect($this->addr, '/news');
+    }
+    expect(news_live_wait($this->addr, 1, 5))->toBe(5);
+    \proc_terminate($this->proc, \SIGTERM);
+    foreach ($clients as $conn) {
+        expect(ws_frame($conn))->toBe([8, \pack('n', 1001)]);
+        ws_send($conn, \pack('n', 1001), 8); // the goodbye back, and closing, as a browser does
+        expect(ws_frame($conn))->toBeNull();
+        \fclose($conn);
+    }
+    $exit       = app_stop($this->proc, false);
+    $this->proc = null;
+    expect($exit)->toBe(0)
+        ->and(\file_get_contents($this->log))->not->toMatch('/error|exception|warning/i');
+});
+
 it('keeps memory flat over 10,000 requests', function () {
     $jar = jar();
     http("http://$this->addr/", $jar);
