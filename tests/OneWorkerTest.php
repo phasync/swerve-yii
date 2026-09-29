@@ -42,6 +42,14 @@ it('keeps each request\'s state its own while requests overlap in the worker', f
     }
 });
 
+// Each has an application of its own; they take turns only on PHP's session, which /slow doesn't use
+it('serves requests that overlap at once, in applications of their own', function () {
+    $start  = \microtime(true);
+    $bodies = http_all(\array_map(fn () => request("http://$this->addr/slow"), \range(1, 8)));
+    expect($bodies)->toBe(\array_fill(0, 8, 'done'))
+        ->and(\microtime(true) - $start)->toBeLessThan(2.0);
+});
+
 it('shows a flash message once', function () {
     $jar = jar();
     expect(http("http://$this->addr/flash/set", $jar)[1])->toBe('set')

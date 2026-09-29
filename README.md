@@ -105,17 +105,21 @@ worker. [Method and raw results](benchmarks/).
   yiisoft/session's `Flash` has no reset and keeps the last session id it saw, so its messages
   would not expire ([yiisoft/session#2](https://github.com/yiisoft/session/issues/2)); the
   adapter clears that id too.
-- **Concurrency:** one request at a time per worker (`phasync\Util\Synchronized`). Yii keeps a
-  request's state in shared services of the container, and its session is PHP's native
-  session, one per process: a container per request in flight would still share it. Streamed
-  bodies and WebSockets go on after the request's turn, so they don't hold up the worker.
+- **Concurrency:** each request borrows an application of its own (a container, with its
+  services) from a pool per worker, which builds more, up to 16
+  (`new Swerve\Yii\Handler(__DIR__, applications: 16)`), while requests overlap. PHP's native
+  session is one per process: requests take turns on it, from opening the session to closing it.
+  Requests that don't use the session never wait. [Details and evidence](docs/concurrency.md).
 - **Sessions:** yiisoft/session through PHP's session module, with the save handler the
   application configures (files, Redis, a database).
 
 ## Before you deploy
 
-- A request that waits (a database, an HTTP API) keeps its worker's other requests waiting,
-  also with phasync-ext. Run at least as many workers as you would run PHP-FPM children.
+- With phasync-ext, a request waiting for I/O (a database, an HTTP API) lets the worker's other
+  requests run, except those waiting for the session. Without it, a wait blocks the worker.
+  Each extra application costs about 7 ms to build and 0.5 MB; it runs the bootstrap group and
+  dispatches `ApplicationStartup` as the first does. Request state your own code keeps in static
+  properties or globals is shared by all of them: `applications: 1` serves one request at a time.
 - A service of your own that keeps request state needs a `reset` callback in its container
   definition, as Yii's own services have: without one, the next request sees that state.
 - A streamed body, an SSE producer or a WebSocket callback runs after the reset: take what it
