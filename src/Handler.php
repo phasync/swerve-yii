@@ -28,7 +28,7 @@ use Yiisoft\Yii\Runner\ApplicationRunner;
  * RequestProvider, the session, the view...), and PHP's session id and $_SESSION are cleared.
  *
  * Requests take turns, one at a time per worker: those services, and PHP's native session,
- * are shared by every request of the worker.
+ * are shared by every request of the worker. See docs/concurrency.md.
  */
 final class Handler implements RequestHandlerInterface
 {

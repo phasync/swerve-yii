@@ -109,6 +109,7 @@ worker. [Method and raw results](benchmarks/).
   request's state in shared services of the container, and its session is PHP's native
   session, one per process: a container per request in flight would still share it. Streamed
   bodies and WebSockets go on after the request's turn, so they don't hold up the worker.
+  [Why, and what was tried](docs/concurrency.md).
 - **Sessions:** yiisoft/session through PHP's session module, with the save handler the
   application configures (files, Redis, a database).
 
