@@ -29,6 +29,19 @@ it('gives a visitor without a session cookie a new session, after one with', fun
 });
 
 // Flash remembers the last session id it saw: the same worker must see the session again
+// Each request sets its value in every service that keeps request state, waits while the others
+// run, and reads it back: twice, the second time in the sessions the first started
+it('keeps each request\'s state its own while requests overlap in the worker', function () {
+    $values = ['nb', 'en', 'de', 'fr', 'sv', 'da', 'fi', 'is'];
+    $jars   = \array_map(fn () => jar(), $values);
+    foreach ([1, 2] as $round) {
+        $bodies = http_all(\array_map(fn ($v, $jar) => request("http://$this->addr/interleave/$v", $jar), $values, $jars));
+        foreach ($values as $i => $v) {
+            expect(\json_decode($bodies[$i], true))->toBe(\array_fill_keys(['route', 'provider', 'session', 'flash', 'user', 'locale', 'title', 'url'], $v));
+        }
+    }
+});
+
 it('shows a flash message once', function () {
     $jar = jar();
     expect(http("http://$this->addr/flash/set", $jar)[1])->toBe('set')

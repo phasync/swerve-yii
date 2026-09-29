@@ -15,9 +15,12 @@ use Yiisoft\Request\Body\RequestBodyParser;
 use Yiisoft\RequestProvider\RequestProviderInterface;
 use Yiisoft\Router\CurrentRoute;
 use Yiisoft\Router\Route;
+use Yiisoft\Router\UrlGeneratorInterface;
 use Yiisoft\Session\Flash\FlashInterface;
 use Yiisoft\Session\SessionInterface;
+use Yiisoft\Translator\TranslatorInterface;
 use Yiisoft\User\CurrentUser;
+use Yiisoft\View\WebView;
 
 // The routes the tests use, added to the skeleton's own
 
@@ -69,6 +72,40 @@ return [
             'provider'  => $provider->get()->getUri()->getPath(),
             'session'   => $session->get('v'),
             'user'      => $user->getId(),
+        ]);
+    }),
+
+    // Interleaving: every service the skeleton keeps a request's state in, set, then read back
+    // after a wait in which the worker's other requests run
+    Route::get('/interleave/{v}')->name('interleave')->action(function (
+        ResponseFactoryInterface $f,
+        CurrentRoute $route,
+        RequestProviderInterface $provider,
+        SessionInterface $session,
+        FlashInterface $flash,
+        CurrentUser $user,
+        TranslatorInterface $translator,
+        WebView $view,
+        UrlGeneratorInterface $url,
+    ) use ($json, $nap) {
+        $v = $route->getArgument('v');
+        $session->set('v', $v);
+        $flash->set('v', $v);
+        $user->login(new Identity($v));
+        $translator->setLocale($v);
+        $view->setTitle($v);
+        $url->setDefaultArgument('v', $v);
+        $nap(0.05);
+
+        return $json($f, [
+            'route'    => $route->getArgument('v'),
+            'provider' => \basename($provider->get()->getUri()->getPath()),
+            'session'  => $session->get('v'),
+            'flash'    => $flash->get('v'),
+            'user'     => $user->getId(),
+            'locale'   => $translator->getLocale(),
+            'title'    => $view->getTitle(),
+            'url'      => \basename($url->generate('interleave')),
         ]);
     }),
 
