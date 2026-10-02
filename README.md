@@ -12,8 +12,7 @@ run a Yii 3 application ([yiisoft/app](https://github.com/yiisoft/app)) unchange
 covered.
 
 ```bash
-composer config minimum-stability alpha && composer config prefer-stable true
-composer config minimum-stability alpha   # while swerve is in alpha
+composer config minimum-stability beta   # while swerve is in beta
 composer config prefer-stable true         # everything else stays stable
 composer require phasync/swerve-yii
 ```
