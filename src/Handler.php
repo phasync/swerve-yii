@@ -7,6 +7,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Swerve\WorkerStoppingException;
 use Yiisoft\Di\StateResetter;
 use Yiisoft\ErrorHandler\ErrorHandler;
 use Yiisoft\ErrorHandler\Middleware\ErrorCatcher;
@@ -17,9 +18,11 @@ use Yiisoft\Yii\Http\Handler\ThrowableHandler;
 use Yiisoft\Yii\Runner\ApplicationRunner;
 
 /**
- * A Yii 3 application as swerve's request handler, from the project's swerve.php:
+ * A Yii 3 application as a PSR-15 request handler, which the `yii` adapter's entry ({@see entry()})
+ * serves through swerve-psr15's Bridge; a swerve.php run with `--adapter=swerve` may do the same,
+ * for other settings:
  *
- *     return new Swerve\Yii\Handler(__DIR__);
+ *     return Swerve\Psr15\Bridge::wrap(new Swerve\Yii\Handler(__DIR__));
  *
  * Once per worker, the constructor builds the configuration and the container, registers the
  * application's ErrorHandler, runs the bootstrap group and starts the Application, as Yii's
@@ -36,6 +39,9 @@ final class Handler implements RequestHandlerInterface
     private readonly ContainerInterface $container;
     private readonly ErrorCatcher $errorCatcher;
     private readonly ?\Closure $resetFlash;
+
+    /** The WorkerStoppingException the ErrorCatcher middleware caught in the request in flight */
+    private static ?WorkerStoppingException $stopping = null;
 
     /**
      * @param string      $root        the application's root directory, where composer.json is
@@ -79,7 +85,16 @@ final class Handler implements RequestHandlerInterface
         return Synchronized::run($this, function () use ($request) {
             $request = $request->withAttribute('applicationStartTime', \microtime(true));
             try {
-                return $response = $this->application->handle($request);
+                $response = $this->application->handle($request);
+                if (null !== $stopping = self::$stopping) {
+                    self::$stopping = null;
+
+                    throw $stopping;
+                }
+
+                return $response;
+            } catch (WorkerStoppingException $e) {
+                throw $e; // the worker stops: swerve answers the request (a 503 when nothing was sent yet)
             } catch (\Throwable $e) {
                 return $response = $this->errorCatcher->process($request, new ThrowableHandler($e));
             } finally {
@@ -93,6 +108,17 @@ final class Handler implements RequestHandlerInterface
                 $_SESSION = [];
             }
         });
+    }
+
+    /**
+     * The ApplicationError listener (config/events-web.php): the ErrorCatcher middleware turns a
+     * stopping worker's WorkerStoppingException into a 500, which handle() replaces by throwing it on.
+     *
+     * @internal
+     */
+    public static function noteError(\Throwable $e): void
+    {
+        $e instanceof WorkerStoppingException && self::$stopping = $e;
     }
 
     /** The skeleton's .env loader fills $_ENV, the process environment getenv(). */

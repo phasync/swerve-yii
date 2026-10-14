@@ -12,36 +12,44 @@ run a Yii 3 application ([yiisoft/app](https://github.com/yiisoft/app)) unchange
 covered.
 
 ```bash
-composer config minimum-stability beta   # while swerve is in beta
-composer config prefer-stable true         # everything else stays stable
-composer require phasync/swerve-yii
+composer config minimum-stability dev    # phasync and swerve are on their development versions
+composer config prefer-stable true        # everything else stays stable
+composer config repositories.swerve-psr15 vcs https://github.com/phasync/swerve-psr15
+composer require 'phasync/swerve:dev-main as 0.1.0-beta7' phasync/swerve-yii
 ```
+
+```bash
+vendor/bin/swerve --adapter=yii --http=0.0.0.0:8080 --public=public
+```
+
+That's the whole setup: the `yii` adapter runs the skeleton's `src/bootstrap.php` (the autoloader
+and `.env`) and serves the application. `--adapter=yii` picks it over swerve-psr15's adapter, which
+comes with it (or put `"extra": {"swerve": {"adapter": "yii"}}` in your `composer.json`).
+`public/index.php` stays as it is, so the same application still runs under PHP-FPM. `APP_ENV`
+and `APP_DEBUG` are read from the environment, as the skeleton reads them; a `swerve.php` run with
+`--adapter=swerve` sets them instead:
 
 ```php
 <?php // swerve.php, next to composer.json
 
 require __DIR__ . '/src/bootstrap.php'; // yiisoft/app's: the autoloader and .env
 
-return new Swerve\Yii\Handler(__DIR__);
+return Swerve\Psr15\Bridge::wrap(new Swerve\Yii\Handler(__DIR__, debug: false, environment: 'prod'));
 ```
 
-```bash
-vendor/bin/swerve --http=0.0.0.0:8080 --public=public swerve.php
-```
-
-That's the whole setup. `public/index.php` stays as it is, so the same application still runs
-under PHP-FPM. `APP_ENV` and `APP_DEBUG` are read from the environment, as the skeleton reads
-them; `new Swerve\Yii\Handler(__DIR__, debug: false, environment: 'prod')` sets them instead.
+The handler is a PSR-15 request handler, served by [swerve-psr15](https://github.com/phasync/swerve-psr15)'s
+`Bridge`.
 
 ## WebSockets
 
-A Yii action returns `Swerve\Http\WebSocket::from()`'s response; the callback runs on the
-connection after the 101. An ordinary GET to the same route is answered 426.
+A Yii action returns swerve-psr15's `WebSocketResponse::from()`; the callback gets swerve's
+`WebSocket` and runs on the connection after the 101. An ordinary GET to the same route is answered 426.
 
 ```php
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Swerve\Http\WebSocket;
+use Swerve\Psr15\WebSocketResponse;
+use Swerve\WebSocket;
 use Swerve\Swerve;
 use Yiisoft\User\CurrentUser;
 
@@ -51,7 +59,7 @@ final readonly class NewsAction   // Route::get('/news')->action(NewsAction::cla
     {
         $userId = $user->getId();   // now: the callback runs after the request's services are reset
 
-        return WebSocket::from($request, static function (WebSocket $ws) use ($userId) {
+        return WebSocketResponse::from($request, static function (WebSocket $ws) use ($userId) {
             foreach (Swerve::subscribe("user:$userId") as $message) {
                 $ws->send($message);
             }
@@ -73,7 +81,7 @@ Swerve::publish("user:$userId", json_encode(['text' => 'Your report is ready']))
   beside the requests that follow. The tests hold 250 WebSockets open on one worker and its
   pages are still answered promptly.
 - **The user, the session, route arguments:** read them in the action, before
-  `WebSocket::from()`, and pass the values in. `CurrentUser`, `SessionInterface`,
+  `WebSocketResponse::from()`, and pass the values in. `CurrentUser`, `SessionInterface`,
   `CurrentRoute` and the like belong to whichever request the worker serves at that moment:
   read inside the callback, `CurrentUser` gives the guest, or the user of another visitor's
   request in progress (a test shows it).
@@ -127,6 +135,9 @@ worker. [Method and raw results](benchmarks/).
   `ErrorException` (a 500 page in a request, as under PHP-FPM), also in a coroutine that
   outlives its request, such as a stream's producer.
 - `exit`, `die` and `dd()` end the worker, and the requests it is serving with it.
+- **A stop ends the requests in flight.** On a shutdown or reload swerve stops a worker at once:
+  a request still waiting then ends, answered `503` by swerve when nothing was sent yet, not the
+  `ErrorCatcher`'s page (`config/events-web.php` of this package listens for it); clients retry.
 
 ## Compatibility
 

@@ -56,7 +56,7 @@ it('turns a PHP warning into a 500 page, as Yii does under PHP-FPM, and serves o
         ->and(http("http://$this->addr/json")[0])->toBe(200);
 });
 
-it('finishes a slow request when told to stop', function () {
+it('ends a slow request with swerve\'s 503 when told to stop', function () {
     $ch    = request("http://$this->addr/slow");
     $multi = \curl_multi_init();
     \curl_multi_add_handle($multi, $ch);
@@ -71,8 +71,8 @@ it('finishes a slow request when told to stop', function () {
     } while ($running > 0);
     $exit       = app_stop($this->proc, false);
     $this->proc = null;
-    expect(\curl_getinfo($ch, \CURLINFO_RESPONSE_CODE))->toBe(200)
-        ->and(\curl_multi_getcontent($ch))->toBe('done')
+    // The worker stops at once, and its requests with it: swerve answers the one in flight
+    expect(\curl_getinfo($ch, \CURLINFO_RESPONSE_CODE))->toBe(503)
         ->and($exit)->toBe(0)
         ->and(\file_get_contents($this->log))->not->toMatch('/error|exception|warning/i');
 });

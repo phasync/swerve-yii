@@ -6,13 +6,14 @@ namespace App\SwerveTest;
 
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Swerve\Http\WebSocket;
+use Swerve\Psr15\WebSocketResponse;
 use Swerve\Swerve;
+use Swerve\WebSocket;
 use Yiisoft\User\CurrentUser;
 
 /**
  * A WebSocket action that forwards the topic 'news' to the browser, each message addressed to
- * the user who opened it: the user is taken from CurrentUser before WebSocket::from(), since
+ * the user who opened it: the user is taken from CurrentUser before WebSocketResponse::from(), since
  * the callback runs after the request's services were reset.
  */
 final class NewsSocket
@@ -24,7 +25,7 @@ final class NewsSocket
     {
         $name = $user->getId() ?? 'guest';
 
-        return WebSocket::from($request, static function (WebSocket $ws) use ($name) {
+        return WebSocketResponse::from($request, static function (WebSocket $ws) use ($name) {
             ++self::$live;
             try {
                 foreach (Swerve::subscribe('news') as $message) {

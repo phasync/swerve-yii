@@ -12,10 +12,10 @@ esac
 [ -f app/composer.json ] || composer create-project --no-interaction --no-progress --no-install "$skeleton" app
 
 # This package from the checkout: its composer.json and src/ (the whole checkout would contain
-# the app itself, a loop for tools that follow symlinks)
+# the app itself, a loop for tools that follow symlinks), and its config/ for yiisoft/config
 mkdir -p package
 cp ../../composer.json package/
-rm -rf package/src && cp -r ../../src package/src
+rm -rf package/src package/config && cp -r ../../src package/src && cp -r ../../config package/config
 
 cd app
 # The test additions: routes, an identity for yiisoft/user, and the one-line swerve.php
@@ -32,5 +32,7 @@ grep -q swerve-test-routes config/common/routes.php \
 composer config minimum-stability dev
 composer config prefer-stable true
 composer config repositories.swerve-yii '{"type": "path", "url": "../package", "options": {"symlink": true}}'
+# The adapter's own requirements: swerve dev-main (aliased, for swerve-psr15's requirement of a release) and swerve-psr15
+composer config repositories.swerve-psr15 vcs https://github.com/phasync/swerve-psr15
 composer require --no-interaction --no-progress -W \
-    'phasync/swerve-yii:*@dev' yiisoft/request-body-parser yiisoft/user
+    'phasync/swerve:dev-main as 0.1.0-beta7' 'phasync/swerve-yii:*@dev' yiisoft/request-body-parser yiisoft/user

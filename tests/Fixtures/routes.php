@@ -8,8 +8,9 @@ use phasync\Psr\UnbufferedStream;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Swerve\Http\WebSocket;
+use Swerve\Psr15\WebSocketResponse;
 use Swerve\Swerve;
+use Swerve\WebSocket;
 use Yiisoft\Csrf\CsrfTokenInterface;
 use Yiisoft\Request\Body\RequestBodyParser;
 use Yiisoft\RequestProvider\RequestProviderInterface;
@@ -146,7 +147,7 @@ return [
 
         return $f->createResponse()->withHeader('Content-Type', 'text/plain')->withBody($body);
     }),
-    Route::get('/ws')->action(fn (ServerRequestInterface $r) => WebSocket::from($r, function (WebSocket $ws) {
+    Route::get('/ws')->action(fn (ServerRequestInterface $r) => WebSocketResponse::from($r, function (WebSocket $ws) {
         foreach ($ws as $message) {
             $ws->isBinary() ? $ws->sendBinary($message) : $ws->send("echo: $message");
         }
@@ -160,12 +161,12 @@ return [
         return $text($f, 'published');
     }),
     Route::get('/news/live')->action(fn (ResponseFactoryInterface $f) => $json($f, [\getmypid(), NewsSocket::$live])),
-    // The user, taken before WebSocket::from(); 'inside' also reads CurrentUser in the callback,
+    // The user, taken before WebSocketResponse::from(); 'inside' also reads CurrentUser in the callback,
     // after the reset, which is wrong: it sees whichever request the worker serves then
     Route::get('/ws/who')->action(function (ServerRequestInterface $r, CurrentUser $user) {
         $taken = $user->getId() ?? 'guest';
 
-        return WebSocket::from($r, function (WebSocket $ws) use ($taken, $user) {
+        return WebSocketResponse::from($r, function (WebSocket $ws) use ($taken, $user) {
             foreach ($ws as $message) {
                 $ws->send('inside' === $message ? 'inside: ' . ($user->getId() ?? 'guest') : "taken: $taken");
             }
