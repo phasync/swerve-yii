@@ -21,6 +21,8 @@ The framework running correctly on swerve does not mean your application does: s
 code keeps in statics, globals or shared services, and connections shared between requests, need
 the same care. See [Making your application safe for concurrent
 requests](https://phasync.github.io/guides/concurrent-requests-in-your-application/).
+[phasync/doctor](https://github.com/phasync/doctor) lists the candidates in your code:
+`composer require --dev phasync/doctor`, then `vendor/bin/phasync-doctor`.
 
 ```bash
 composer require phasync/swerve-yii
