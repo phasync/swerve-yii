@@ -32,7 +32,7 @@ $text = static function (ResponseFactoryInterface $f, string $body, string $type
     return $response;
 };
 $json = static fn (ResponseFactoryInterface $f, mixed $data) => $text($f, \json_encode($data), 'application/json');
-// Wait as a request does for a database: with phasync-ext a plain sleep() lets other requests run
+// Wait as a request does for a database: with ext-phasync a plain sleep() lets other requests run
 $nap = static fn (float $seconds) => \extension_loaded('phasync') ? \usleep((int) ($seconds * 1e6)) : phasync::sleep($seconds);
 
 return [
@@ -173,7 +173,7 @@ return [
         });
     }),
     // A wait of ?ms= (default 10) in usleep(), as a database query waits: it blocks the worker
-    // without phasync-ext
+    // without ext-phasync
     Route::get('/usleep')->action(function (ResponseFactoryInterface $f, ServerRequestInterface $r) use ($json) {
         $ms = (int) ($r->getQueryParams()['ms'] ?? 10);
         \usleep(1000 * $ms);

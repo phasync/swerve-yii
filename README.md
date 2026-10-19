@@ -11,11 +11,14 @@ request and response bodies, and hold WebSockets and Server-Sent Events. This pa
 run a Yii 3 application ([yiisoft/app](https://github.com/yiisoft/app)) unchanged. Yii 2 is not
 covered.
 
+**One request at a time per worker.** Yii's container keeps a request's state in shared
+services, and PHP's session is one process-wide `$_SESSION`, so the adapter runs requests one
+at a time per worker; a request that waits for a database or an HTTP API holds its worker
+meanwhile. Run more workers for more concurrent requests. [Why, and what to do about
+it](docs/concurrency.md).
+
 ```bash
-composer config minimum-stability dev    # phasync and swerve are on their development versions
-composer config prefer-stable true        # everything else stays stable
-composer config repositories.swerve-psr15 vcs https://github.com/phasync/swerve-psr15
-composer require 'phasync/swerve:dev-main as 0.1.0-beta7' phasync/swerve-yii
+composer require phasync/swerve-yii
 ```
 
 ```bash
@@ -89,17 +92,10 @@ Swerve::publish("user:$userId", json_encode(['text' => 'Your report is ready']))
   ends, also one that only forwards a subscription. On a shutdown or reload, open sockets are
   closed with 1001 (going away) and the worker exits cleanly.
 
-## What changes
-
-| Yii skeleton, 4 processes | PHP-FPM | swerve | swerve + phasync-ext |
-|---|---:|---:|---:|
-| JSON route | 984 req/s | 16,686 req/s (17.0×) | 16,788 req/s (17.1×) |
-| Home page with session | 824 req/s | 7,483 req/s (9.1×) | 7,275 req/s (8.8×) |
+## How it runs
 
 PHP-FPM builds Yii's configuration and container for every request; swerve builds them once per
-worker. [Method and raw results](benchmarks/).
-
-## How it runs
+worker.
 
 - **Once per worker:** the configuration and the container are built, the container's
   `ErrorHandler` is registered, the `bootstrap-web` group runs and `Application::start()`
@@ -116,14 +112,14 @@ worker. [Method and raw results](benchmarks/).
   request's state in shared services of the container, and its session is PHP's native
   session, one per process: a container per request in flight would still share it. Streamed
   bodies and WebSockets go on after the request's turn, so they don't hold up the worker.
-  [Why, and what was tried](docs/concurrency.md).
+  [Why, and what to do about it](docs/concurrency.md).
 - **Sessions:** yiisoft/session through PHP's session module, with the save handler the
   application configures (files, Redis, a database).
 
 ## Before you deploy
 
 - A request that waits (a database, an HTTP API) keeps its worker's other requests waiting,
-  also with phasync-ext. Run at least as many workers as you would run PHP-FPM children.
+  also with ext-phasync. Run at least as many workers as you would run PHP-FPM children.
 - A service of your own that keeps request state needs a `reset` callback in its container
   definition, as Yii's own services have: without one, the next request sees that state.
 - A streamed body, an SSE producer or a WebSocket callback runs after the reset: take what it
@@ -141,7 +137,7 @@ worker. [Method and raw results](benchmarks/).
 
 ## Compatibility
 
-| Yii | PHP | phasync-ext |
+| Yii | PHP | ext-phasync |
 |---|---|---|
 | 3 (yiisoft/app 1.x) | 8.2 – 8.5 | optional; tested with and without |
 

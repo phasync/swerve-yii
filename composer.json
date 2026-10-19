@@ -12,9 +12,9 @@
     ],
     "require": {
         "php": "^8.2",
-        "phasync/phasync": "dev-main",
-        "phasync/swerve": "dev-main as 0.1.0-beta7",
-        "phasync/swerve-psr15": "dev-main",
+        "phasync/phasync": "^2.0",
+        "phasync/swerve": "^0.1",
+        "phasync/swerve-psr15": "^0.1",
         "psr/http-server-handler": "^1.0",
         "yiisoft/di": "^1.2",
         "yiisoft/error-handler": "^4.0",
@@ -45,7 +45,7 @@
             "events-web": "events-web.php"
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true,
     "scripts": {
         "test": "@php vendor/bin/pest --stop-on-defect",

@@ -40,7 +40,10 @@ it('pushes every published message to every client on both workers, in order', f
         expect(http("http://$this->addr/news/publish/$m")[1])->toBe('published');
     }
     foreach ($clients as $conn) {
-        expect([ws_read($conn), ws_read($conn), ws_read($conn)])->toBe(['guest: one', 'guest: two', 'guest: three']);
+        // publishes from two workers have no order between them (swerve's publish-subscribe docs)
+        $got = [ws_read($conn), ws_read($conn), ws_read($conn)];
+        \sort($got);
+        expect($got)->toBe(['guest: one', 'guest: three', 'guest: two']);
     }
 
     // Half leave without a word, half say goodbye: every callback ends either way

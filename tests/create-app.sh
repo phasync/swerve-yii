@@ -29,10 +29,10 @@ grep -q swerve-test-routes config/common/routes.php \
 # The skeleton reads APP_ENV and APP_DEBUG from .env
 [ -f .env ] || printf 'APP_ENV=prod\nAPP_DEBUG=false\n' > .env
 
-composer config minimum-stability dev
+composer config minimum-stability stable
 composer config prefer-stable true
 composer config repositories.swerve-yii '{"type": "path", "url": "../package", "options": {"symlink": true}}'
-# The adapter's own requirements: swerve dev-main (aliased, for swerve-psr15's requirement of a release) and swerve-psr15
+# The adapter's own requirements: swerve and swerve-psr15
 composer config repositories.swerve-psr15 vcs https://github.com/phasync/swerve-psr15
 composer require --no-interaction --no-progress -W \
-    'phasync/swerve:dev-main as 0.1.0-beta7' 'phasync/swerve-yii:*@dev' yiisoft/request-body-parser yiisoft/user
+    'phasync/swerve:^0.1' 'phasync/swerve-yii:*@dev' yiisoft/request-body-parser yiisoft/user
