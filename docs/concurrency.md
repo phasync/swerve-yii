@@ -47,14 +47,23 @@ another request.
 Dropping the lock would mean making the state above per-request instead of shared; this adapter
 doesn't do that today. swerve already runs each request in its own
 [`\Scope`](https://wiki.php.net/rfc/scope) (swerve's `src/Http/HttpConnection.php`), and
-`Scope::getCurrent()` identifies that request across its fibers. Two routes build on it: (1) key
-a value by the `Scope`, in a `WeakMap<\Scope, …>`, instead of in a service's own property — how
-`CurrentRoute`, `RequestProvider`, `CurrentUser`, the translator, `WebView`, the URL generator
-and `Flash` could become per-request without a container per request. With `fiber-interop/ext-scope`
-(bundled in the phasync extension) or its userland polyfill `fiber-interop/scope` loaded,
-`$_GET`, `$_POST`, `$_COOKIE`, `$_FILES`, `$_REQUEST`, the default timezone and the intl locale
-already follow the scope this way, built in. (2) `phasync::onScopeChange(fn (Scope $new, ?Scope
-$old) => ...)`, a hook that runs before a coroutine whose scope changed, to save the outgoing
-scope's value of a global and load the incoming scope's — phasync's own example does this for a
-locale. `$_SESSION` and `session_id()` are plain process globals that `ext-scope` leaves alone,
-so this hook, not the `WeakMap` route, is what would make PHP's session per-request.
+`Scope::getCurrent()` identifies that request across its fibers.
+
+The simple fix is `phasync::onScopeChange(fn (\Scope $new, ?\Scope $old) => ...)`: a hook that
+runs on every switch between scopes, in the event loop, to save the outgoing scope's value of a
+process-wide global and load the incoming scope's — phasync's own example does this for a
+locale, and the same could be done for `$_SESSION` and `session_id()`, which are plain process
+globals that `Scope` leaves alone. It is specific to phasync, not part of fiber-interop,
+`ext-scope` or the Scope RFC itself; it runs on every switch between requests on a worker, so it
+should swap only a few references; it covers only state the application swaps itself, so a
+library's own statics still leak between requests; and an application that relies on it runs on
+phasync only.
+
+The proper fix is to key a value by the `Scope` instead, in a `WeakMap<\Scope, …>` instead of a
+service's own property — how `CurrentRoute`, `RequestProvider`, `CurrentUser`, the translator,
+`WebView`, the URL generator and `Flash` could become per-request without a container per
+request. `$_GET`, `$_POST`, `$_COOKIE`, `$_FILES`, the default timezone and — with ext/intl
+loaded — the default locale already follow the scope this way, built into `Scope` itself: with
+`fiber-interop/ext-scope` (bundled in the phasync extension) when it is loaded, and otherwise
+with its userland polyfill `fiber-interop/scope` 0.3.0, which phasync 2.0.2 requires — no extra
+step needed.

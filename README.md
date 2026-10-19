@@ -17,6 +17,11 @@ at a time per worker; a request that waits for a database or an HTTP API holds i
 meanwhile. Run more workers for more concurrent requests. [Why, and what to do about
 it](docs/concurrency.md).
 
+The framework running correctly on swerve does not mean your application does: state your own
+code keeps in statics, globals or shared services, and connections shared between requests, need
+the same care. See [Making your application safe for concurrent
+requests](https://phasync.github.io/guides/concurrent-requests-in-your-application/).
+
 ```bash
 composer require phasync/swerve-yii
 ```
